@@ -90,6 +90,7 @@ st.image("assets/fig_4_9.png", caption="Fig. 4: Shear cell of the Schulze ring s
 st.markdown("This tester rotates an annular (ring-shaped) trough of material under a stationary lid to measure the shear torque.")
 # *** END OF UPDATE ***
 
+#    The flow function shows the relationship between the consolidation stress ($\sigma_1$) and unconfined yield strength ($\sigma_c$). Flowability of a bulk solid is characterized mainly the flow function and the ratio of consolidation stress, $\sigma_1$, to unconfined yield strength, $\sigma_c$, called $\{ff}_c$ is used to characterize flowability numerically.
 st.markdown(
     """
     Both testers work on the same two-step principle to get a single point on the solid's "Flow Function":
@@ -98,7 +99,7 @@ st.markdown(
         A sample is sheared under a constant normal stress ($\sigma_{pre}$) until it reaches a constant, steady flow. This creates a uniform, "critically consolidated" sample.
     
     2.  **Step 2: Shear to Failure**
-        The normal stress is *lowered* (to $\sigma_{sh}$) and the sample is sheared again until it breaks or "fails". The peak shear stress ($\tau_{sh}$) is recorded.
+        The normal stress is *lowered* ($\sigma_{sh} < \sigma_{pre}$ ) and the sample is sheared again until it breaks or "fails". The peak shear stress ($\\tau_{sh}$) is recorded.
     """
 )
 st.markdown("---")
@@ -107,7 +108,7 @@ st.markdown("---")
 st.subheader("4. The Result: The Flow Function")
 st.markdown(
     """
-    The pairs of shear points ($\sigma_{sh}$, $\tau_{sh}$) from Step 2 are plotted to create a **Yield Locus**.
+    The pairs of shear points ($\sigma_{sh}$, $\\tau_{sh}$) from Step 2 are plotted to create a **Yield Locus**.
     
     As shown in the figure below, we use **Mohr's Circles** on this Yield Locus to find two critical values:
     
