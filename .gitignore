@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+.venv/
+digitized_f_phi_i_verification.png

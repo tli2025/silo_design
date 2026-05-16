@@ -1,12 +1,12 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import fsolve
 from app_utils import (
     get_f_phi_i,
     get_phi_lin,
     get_flow_factor_ffp,
-    create_line_func
+    create_line_func,
+    find_positive_intersection
 )
 
 st.set_page_config(
@@ -19,6 +19,21 @@ st.set_page_config(
 g = 9.81 # m/s^2
 
 st.title("📊 Step 2: Design Results & Plots")
+
+def get_valid_xy(rows, x_col, y_col):
+    """Returns paired numeric x/y values, skipping incomplete rows."""
+    x_vals, y_vals = [], []
+    for row in rows:
+        x_val = row.get(x_col)
+        y_val = row.get(y_col)
+        if x_val is not None and y_val is not None:
+            x_vals.append(float(x_val))
+            y_vals.append(float(y_val))
+    return x_vals, y_vals
+
+def require_positive(value, label):
+    if value <= 0:
+        raise ValueError(f"{label} must be greater than 0.")
 
 # Check if inputs exist in the session state
 if 'inputs' not in st.session_state:
@@ -53,12 +68,28 @@ else:
     theta_prime = inputs["theta_prime_manual"]
     ff_value = inputs["ff_manual"]
 
+    try:
+        require_positive(gamma, "Bulk density")
+        if not (0 < delta < 90):
+            raise ValueError("Effective angle of internal friction must be between 0 and 90 degrees.")
+        if flow_pattern == "Mass-Flow":
+            require_positive(ff_value, "Flow factor")
+        if flow_pattern == "Funnel-Flow":
+            require_positive(h_f, "Filling height")
+            require_positive(D_silo, "Silo diameter/width")
+            require_positive(K_janssen, "Janssen stress ratio K")
+    except ValueError as e:
+        st.error(str(e))
+        st.stop()
+
     # --- Process Inputs into Usable Functions (all stress in kPa) ---
     if ff_input_method == "Define by N test points":
-        inst_x = [p.get("Consol. Stress σ₁ (kPa)") for p in ff_inst_data if p.get("Consol. Stress σ₁ (kPa)") is not None]
-        inst_y = [p.get("Strength σc (kPa)") for p in ff_inst_data if p.get("Strength σc (kPa)") is not None]
-        time_x = [p.get("Consol. Stress σ₁ (kPa)") for p in ff_time_data if p.get("Consol. Stress σ₁ (kPa)") is not None]
-        time_y = [p.get("Strength σc (kPa)") for p in ff_time_data if p.get("Strength σc (kPa)") is not None]
+        inst_x, inst_y = get_valid_xy(ff_inst_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
+        time_x, time_y = get_valid_xy(ff_time_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
+
+        if len(inst_x) < 2 or len(time_x) < 2:
+            st.error("Flow Function data must include at least 2 complete instantaneous points and 2 complete time-function points.")
+            st.stop()
         
         ff_inst_func, (m_inst, c_inst) = create_line_func(inst_x, inst_y)
         ff_time_func, (m_time, c_time) = create_line_func(time_x, time_y)
@@ -101,9 +132,12 @@ else:
                 
                 ff_line_func = lambda sigma_1: sigma_1 / ff_value
                 ff_design_func = ff_time_func
-                intersection_func = lambda sigma_1: ff_design_func(sigma_1) - ff_line_func(sigma_1)
                 
-                sigma_1_crit_kpa = fsolve(intersection_func, sigma_1_plot_max_base / 2)[0] 
+                sigma_1_crit_kpa = find_positive_intersection(
+                    ff_design_func,
+                    ff_line_func,
+                    upper_hint=sigma_1_plot_max_base
+                )
                 sigma_c_crit_kpa = ff_design_func(sigma_1_crit_kpa) 
                 
                 # --- Convert to Pa for physics equations ---
@@ -170,8 +204,11 @@ else:
                 ff_p = get_flow_factor_ffp(delta, phi_lin_approx_lower, f_phi_i_val_lower)
                 ffp_line_func = lambda sigma_1: sigma_1 / ff_p
                 
-                intersection_func_lower = lambda sigma_1: ff_design_func(sigma_1) - ffp_line_func(sigma_1)
-                sigma_1_crit_kpa_lower = fsolve(intersection_func_lower, sigma_1_plot_max_base / 2)[0]
+                sigma_1_crit_kpa_lower = find_positive_intersection(
+                    ff_design_func,
+                    ffp_line_func,
+                    upper_hint=sigma_1_plot_max_base
+                )
                 sigma_c_crit_kpa_lower = ff_design_func(sigma_1_crit_kpa_lower)
                 f_phi_i_lower = f_phi_i_val_lower
                 
@@ -233,8 +270,11 @@ else:
                     ff_doming = 1.7
                     ff_line_func_doming = lambda sigma_1: sigma_1 / ff_doming
                     
-                    intersection_func_doming = lambda sigma_1: ff_design_func(sigma_1) - ff_line_func_doming(sigma_1)
-                    sigma_1_crit_kpa_doming = fsolve(intersection_func_doming, sigma_1_plot_max_base / 2)[0]
+                    sigma_1_crit_kpa_doming = find_positive_intersection(
+                        ff_design_func,
+                        ff_line_func_doming,
+                        upper_hint=sigma_1_plot_max_base
+                    )
                     sigma_c_crit_kpa_doming = ff_design_func(sigma_1_crit_kpa_doming)
                     
                     H_theta_doming = 1.15

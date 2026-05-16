@@ -94,6 +94,57 @@ def save_inputs(data_dict):
     except Exception as e:
         st.error(f"Error saving inputs to '{SAVE_FILE}': {e}")
 
+def get_valid_xy(dataframe, x_col, y_col):
+    """Returns paired numeric x/y values, skipping incomplete rows."""
+    x_vals, y_vals = [], []
+    for row in dataframe.to_dict("records"):
+        x_val = row.get(x_col)
+        y_val = row.get(y_col)
+        if pd.notna(x_val) and pd.notna(y_val):
+            x_vals.append(float(x_val))
+            y_vals.append(float(y_val))
+    return x_vals, y_vals
+
+def validate_inputs_before_submit():
+    """Stops submission when required engineering inputs are incomplete or nonphysical."""
+    errors = []
+
+    if st.session_state.gamma <= 0:
+        errors.append("Bulk density must be greater than 0.")
+    if not (0 < st.session_state.delta < 90):
+        errors.append("Effective angle of internal friction must be between 0 and 90 degrees.")
+
+    if st.session_state.wyl_input_method == "Define by N test points":
+        wyl_x, wyl_y = get_valid_xy(st.session_state.wyl_data, "Normal Stress (kPa)", "Shear Stress (kPa)")
+        if len(wyl_x) < 2:
+            errors.append("Wall Yield Locus requires at least 2 complete data points.")
+    elif st.session_state.mu < 0:
+        errors.append("Wall friction coefficient must be non-negative.")
+
+    if st.session_state.ff_input_method == "Define by N test points":
+        inst_x, inst_y = get_valid_xy(st.session_state.ff_inst_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
+        time_x, time_y = get_valid_xy(st.session_state.ff_time_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
+        if len(inst_x) < 2:
+            errors.append("Instantaneous Flow Function requires at least 2 complete data points.")
+        if len(time_x) < 2:
+            errors.append("Time Flow Function requires at least 2 complete data points.")
+
+    if st.session_state.flow_pattern == "Mass-Flow" and st.session_state.ff_manual <= 0:
+        errors.append("Flow factor must be greater than 0.")
+
+    if st.session_state.flow_pattern == "Funnel-Flow":
+        if st.session_state.h_f <= 0:
+            errors.append("Filling height must be greater than 0.")
+        if st.session_state.D_silo <= 0:
+            errors.append("Silo diameter/width must be greater than 0.")
+        if st.session_state.K_janssen <= 0:
+            errors.append("Janssen stress ratio K must be greater than 0.")
+
+    if errors:
+        for error in errors:
+            st.error(error)
+        st.stop()
+
 
 # Use two columns for a cleaner layout
 col1, col2 = st.columns(2)
@@ -143,8 +194,8 @@ with col1:
     st.text_input("Wall Material", key="wall_material")
 
     st.subheader("Solid Properties")
-    st.number_input("Bulk Density ($\\rho_b$) [kg/m³]", format="%.2f", key="gamma")
-    st.number_input("Effective Angle of Internal Friction ($\\phi_e$) [°]", min_value=0.0, max_value=90.0, format="%.1f", key="delta")
+    st.number_input("Bulk Density ($\\rho_b$) [kg/m³]", min_value=1.0, format="%.2f", key="gamma")
+    st.number_input("Effective Angle of Internal Friction ($\\phi_e$) [°]", min_value=0.1, max_value=89.9, format="%.1f", key="delta")
     st.caption(f"Assuming standard shear cell area A = {A_SHEAR_CELL:.6f} m².") # Use global constant
 
     st.subheader("Wall Yield Locus (WYL)")
@@ -169,9 +220,7 @@ with col1:
         )
         
         try:
-            wyl_points = st.session_state.wyl_data.to_dict('records')
-            wyl_x = [p.get("Normal Stress (kPa)") for p in wyl_points if p.get("Normal Stress (kPa)") is not None]
-            wyl_y = [p.get("Shear Stress (kPa)") for p in wyl_points if p.get("Shear Stress (kPa)") is not None]
+            wyl_x, wyl_y = get_valid_xy(st.session_state.wyl_data, "Normal Stress (kPa)", "Shear Stress (kPa)")
             
             phi_x_angles = []
             if wyl_x and wyl_y and len(wyl_x) >= 2 and len(wyl_x) == len(wyl_y):
@@ -265,13 +314,8 @@ with col2:
         try:
             fig, ax = plt.subplots()
             
-            inst_data = st.session_state.ff_inst_data.to_dict('records')
-            inst_x = [p.get("Consol. Stress σ₁ (kPa)") for p in inst_data if p.get("Consol. Stress σ₁ (kPa)") is not None]
-            inst_y = [p.get("Strength σc (kPa)") for p in inst_data if p.get("Strength σc (kPa)") is not None]
-
-            time_data = st.session_state.ff_time_data.to_dict('records')
-            time_x = [p.get("Consol. Stress σ₁ (kPa)") for p in time_data if p.get("Consol. Stress σ₁ (kPa)") is not None]
-            time_y = [p.get("Strength σc (kPa)") for p in time_data if p.get("Strength σc (kPa)") is not None]
+            inst_x, inst_y = get_valid_xy(st.session_state.ff_inst_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
+            time_x, time_y = get_valid_xy(st.session_state.ff_time_data, "Consol. Stress σ₁ (kPa)", "Strength σc (kPa)")
             
             sigma_1_plot_max_base = max(max(inst_x) if inst_x else 0, max(time_x) if time_x else 30)
             if sigma_1_plot_max_base == 0: sigma_1_plot_max_base = 30
@@ -358,7 +402,7 @@ if st.session_state.flow_pattern == "Mass-Flow":
 
         lookup_cols = st.columns(2)
         lookup_cols[0].number_input("Enter Design Hopper Angle ($\\Theta$) [°]", format="%.1f", key="theta_prime_manual")
-        lookup_cols[1].number_input("Enter Flow Factor ($ff$) from chart", format="%.2f", key="ff_manual")
+        lookup_cols[1].number_input("Enter Flow Factor ($ff$) from chart", min_value=0.01, format="%.2f", key="ff_manual")
     
     else:
         st.error("Could not find a matching design chart for the selected parameters.")
@@ -367,9 +411,9 @@ elif st.session_state.flow_pattern == "Funnel-Flow":
     with col2:
         st.markdown("#### Funnel-Flow Silo Dimensions")
         st.markdown("Please provide the silo dimensions for the 'Upper Bound' (Janssen) ratholing calculation.")
-        st.number_input("Filling Height (h_f) [m]", format="%.1f", key="h_f")
-        st.number_input("Silo Diameter/Width (D) [m]", format="%.1f", key="D_silo")
-        st.number_input("Janssen Stress Ratio (K)", format="%.2f", help="Typically 0.4-0.5", key="K_janssen")
+        st.number_input("Filling Height (h_f) [m]", min_value=0.01, format="%.1f", key="h_f")
+        st.number_input("Silo Diameter/Width (D) [m]", min_value=0.01, format="%.1f", key="D_silo")
+        st.number_input("Janssen Stress Ratio (K)", min_value=0.01, format="%.2f", help="Typically 0.4-0.5", key="K_janssen")
 
 st.markdown("---")
 
@@ -378,6 +422,7 @@ st.button("Load Last Inputs", on_click=load_inputs)
 
 # --- Submit Button ---
 if st.button("Submit Data and Go to Results", type="primary"):
+    validate_inputs_before_submit()
     
     # Store the DataFrame data as a list of dicts for JSON serialization
     inputs_to_save = {
